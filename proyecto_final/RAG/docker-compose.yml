@@ -1,0 +1,35 @@
+services:
+  backend:
+    build: ./backend
+    container_name: rag-backend
+    env_file: .env                          # GOOGLE_API_KEY; nunca se sube a git
+    environment:
+      CHROMA_PATH: /app/chroma              # índice persistente (montado abajo)
+      DATA_PATH: /app/data                  # corpus (montado abajo)
+      COLLECTION: documentos
+      EMBEDDING_MODEL: gemini-embedding-001
+      GENERATION_MODEL: gemini-3.6-flash
+      CHUNK_WORDS: "300"                    # palabras por chunk
+      CHUNK_OVERLAP: "60"                   # palabras compartidas entre chunks vecinos
+      TOP_K: "4"                            # chunks recuperados por defecto
+      MIN_SCORE: "0.6"                      # similitud mínima para no abstenerse (calibrado: dominio 0.76–0.81, ajeno ~0.57)
+      EMBED_BATCH: "32"                     # chunks por llamada a Google AI
+    volumes:
+      - ./backend/app:/app/app              # código: uvicorn recarga al guardar
+      - ./backend/chroma:/app/chroma        # el índice sobrevive a reinicios
+      - ./data:/app/data                    # documentos del corpus
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"        # BACKEND_PORT=8010 si el 8000 está ocupado
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build: ./frontend
+    container_name: rag-frontend
+    environment:
+      API_URL: http://backend:8000          # nombre del servicio en la red de compose
+    volumes:
+      - ./frontend/app.py:/app/app.py       # Streamlit recarga al guardar
+    ports:
+      - "${FRONTEND_PORT:-8501}:8501"
+    depends_on:
+      - backend

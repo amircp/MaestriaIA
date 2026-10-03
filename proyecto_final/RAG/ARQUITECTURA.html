@@ -1,0 +1,293 @@
+<title>Arquitectura del RAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #FFFFFF;
+    --ink: #1C1B19;
+    --ink-soft: #4A4741;
+    --rule: #D9D6CF;
+    --accent: #0E6B4F;
+    --accent-ink: #0A4F3B;
+    --warn: #9A5B00;
+    --sans: "Atkinson Hyperlegible", "Helvetica Neue", Arial, sans-serif;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 17px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  main { max-width: 62rem; margin: 0 auto; padding-block: 2.5rem 5rem; padding-inline: clamp(16px, 5vw, 32px); }
+  .eyebrow { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.75rem; }
+  h1 { font-family: var(--serif); font-weight: 700; font-size: clamp(2rem, 5vw, 2.6rem); line-height: 1.15; margin: 0 0 0.75rem; text-wrap: balance; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: 1.55rem; line-height: 1.2; margin: 0 0 0.75rem; text-wrap: balance; }
+  .lede { font-size: 1.1rem; color: var(--ink-soft); margin: 0 0 1rem; max-width: 40em; }
+  p { margin: 0 0 1rem; max-width: 46rem; }
+  ul { margin: 0 0 1rem; padding-left: 1.4rem; max-width: 46rem; }
+  li { margin: 0 0 0.45rem; }
+  li::marker { color: var(--accent); }
+  code { font-family: var(--mono); font-size: 0.88em; color: var(--accent-ink); }
+  section { padding-top: 2.5rem; margin-top: 1.5rem; border-top: 1px solid var(--rule); }
+  figure { margin: 1.25rem 0 0; }
+  figure svg { display: block; width: 100%; max-width: 100%; height: auto; color: var(--ink); font-family: var(--sans); }
+  figcaption { font-size: 0.95rem; color: var(--ink-soft); margin-top: 0.75rem; max-width: 46rem; }
+  figcaption strong { color: var(--ink); }
+  /* Estilos del SVG: los trazos heredan el color del texto; el relleno de las cajas es blanco */
+  svg rect, svg polygon, svg line, svg polyline { fill: #FFFFFF; stroke: currentColor; stroke-width: 1.5; }
+  svg line, svg polyline { fill: none; }
+  svg text { fill: currentColor; font-size: 13px; }
+  svg .b { font-weight: 700; font-size: 14px; }
+  svg .m { font-family: var(--mono); font-size: 12px; }
+  svg .s { font-size: 11.5px; fill: var(--ink-soft); }
+  svg .u { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; fill: var(--accent); }
+  svg .acc { stroke: var(--accent); stroke-width: 2; }
+  svg .dash { stroke-dasharray: 6 4; }
+  svg .warn { stroke: var(--warn); stroke-width: 2; }
+  svg .warnt { fill: var(--warn); }
+  svg .lbl { font-size: 11.5px; fill: var(--ink-soft); }
+  .legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font-size: 0.9rem; color: var(--ink-soft); margin: 0.75rem 0 0; padding: 0; list-style: none; }
+  .legend li { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+  .sw { display: inline-block; width: 26px; height: 14px; border: 1.5px solid var(--ink); border-radius: 2px; background: #fff; }
+  .sw.acc { border-color: var(--accent); border-width: 2px; }
+  .sw.dash { border-style: dashed; }
+  .sw.warn { border-color: var(--warn); border-width: 2px; }
+  @media print { main { max-width: none; padding: 0; } }
+</style>
+
+<main>
+  <header>
+    <p class="eyebrow">Proyecto final · Sistema RAG</p>
+    <h1>Arquitectura del RAG</h1>
+    <p class="lede">Tres vistas del mismo sistema: dónde corre cada pieza, qué pasa cuando subes un documento y qué pasa cuando haces una pregunta.</p>
+    <ul class="legend" aria-label="Leyenda">
+      <li><span class="sw acc"></span> Código del proyecto</li>
+      <li><span class="sw"></span> Datos o pasos intermedios</li>
+      <li><span class="sw dash"></span> Servicio externo o límite de red</li>
+      <li><span class="sw warn"></span> Abstención</li>
+    </ul>
+  </header>
+
+  <section id="contenedores">
+    <h2>1. Dónde corre cada pieza</h2>
+    <p>Dos contenedores en la red interna de Docker Compose. El navegador solo ve a Streamlit; Streamlit solo ve a la API; la API es la única que toca Chroma y Google AI.</p>
+    <figure>
+      <svg viewBox="0 0 960 415" role="img" aria-label="El navegador habla con el contenedor de Streamlit, que habla por HTTP JSON con el contenedor de FastAPI; solo FastAPI accede al índice en disco, al corpus y a Google AI por internet.">
+        <defs>
+          <marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" stroke="none"/></marker>
+        </defs>
+        <!-- Navegador -->
+        <rect x="20" y="170" width="150" height="70" rx="4"/>
+        <text x="95" y="199" text-anchor="middle" class="b">Navegador</text>
+        <text x="95" y="221" text-anchor="middle" class="m">localhost:8511</text>
+        <!-- Límite de compose -->
+        <rect x="215" y="30" width="500" height="350" rx="6" class="dash"/>
+        <text x="228" y="54" class="u">docker compose · red interna</text>
+        <!-- Frontend -->
+        <rect x="245" y="150" width="180" height="110" rx="4" class="acc"/>
+        <text x="335" y="172" text-anchor="middle" class="u">rag-frontend</text>
+        <text x="335" y="199" text-anchor="middle" class="b">Streamlit</text>
+        <text x="335" y="221" text-anchor="middle" class="m">frontend/app.py</text>
+        <text x="335" y="243" text-anchor="middle" class="s">puerto 8501 · solo httpx</text>
+        <!-- Backend -->
+        <rect x="495" y="90" width="175" height="170" rx="4" class="acc"/>
+        <text x="582" y="112" text-anchor="middle" class="u">rag-backend</text>
+        <text x="582" y="139" text-anchor="middle" class="b">FastAPI</text>
+        <text x="582" y="161" text-anchor="middle" class="m">backend/app/main.py</text>
+        <text x="582" y="184" text-anchor="middle" class="s">extract · chunk · embed</text>
+        <text x="582" y="201" text-anchor="middle" class="s">store · generate</text>
+        <text x="582" y="240" text-anchor="middle" class="s">puerto 8000 · /docs</text>
+        <!-- Volúmenes -->
+        <rect x="495" y="305" width="90" height="56" rx="4"/>
+        <text x="540" y="328" text-anchor="middle" class="m">chroma/</text>
+        <text x="540" y="347" text-anchor="middle" class="s">índice</text>
+        <rect x="580" y="305" width="90" height="56" rx="4"/>
+        <text x="625" y="328" text-anchor="middle" class="m">data/</text>
+        <text x="625" y="347" text-anchor="middle" class="s">corpus</text>
+        <line x1="540" y1="260" x2="540" y2="305" marker-end="url(#ar1)" marker-start="url(#ar1)"/>
+        <text x="548" y="287" class="lbl">lee y escribe</text>
+        <line x1="625" y1="260" x2="625" y2="305" marker-end="url(#ar1)"/>
+        <text x="633" y="287" class="lbl">lee</text>
+        <!-- Google AI -->
+        <rect x="760" y="90" width="180" height="170" rx="6" class="dash"/>
+        <text x="850" y="112" text-anchor="middle" class="u">Google AI · internet</text>
+        <rect x="790" y="132" width="140" height="40" rx="4"/>
+        <text x="860" y="150" text-anchor="middle" class="m">gemini-embedding-001</text>
+        <text x="860" y="165" text-anchor="middle" class="s">embeddings</text>
+        <rect x="790" y="195" width="140" height="40" rx="4"/>
+        <text x="860" y="213" text-anchor="middle" class="m">gemini-3.6-flash</text>
+        <text x="860" y="228" text-anchor="middle" class="s">redacta la respuesta</text>
+        <!-- Flechas principales -->
+        <line x1="170" y1="205" x2="245" y2="205" marker-end="url(#ar1)"/>
+        <text x="207" y="195" text-anchor="middle" class="lbl">HTTP</text>
+        <line x1="425" y1="205" x2="495" y2="205" marker-end="url(#ar1)"/>
+        <text x="460" y="192" text-anchor="middle" class="lbl">HTTP JSON</text>
+        <text x="460" y="225" text-anchor="middle" class="lbl">/ingest · /query</text>
+        <line x1="670" y1="152" x2="790" y2="152" marker-end="url(#ar1)"/>
+        <text x="730" y="143" text-anchor="middle" class="lbl">embed_content</text>
+        <line x1="670" y1="215" x2="790" y2="215" marker-end="url(#ar1)"/>
+        <text x="730" y="206" text-anchor="middle" class="lbl">generate_content</text>
+        <!-- Clave -->
+        <text x="465" y="404" text-anchor="middle" class="s">GOOGLE_API_KEY llega por .env solo al contenedor del backend</text>
+      </svg>
+      <figcaption><strong>Regla del enunciado que este dibujo hace visible:</strong> no existe ninguna flecha de Streamlit hacia Chroma ni hacia Google AI. Si el frontend cae, el índice sigue intacto; si cambias la interfaz, la API no se entera. La clave de Google vive solo en el contenedor del backend.</figcaption>
+    </figure>
+  </section>
+
+  <section id="ingesta">
+    <h2>2. Qué pasa cuando subes un documento</h2>
+    <p>Es la ruta <code>POST /ingest</code>. Se hace una vez por documento y deja el índice listo en disco. Cada módulo transforma el dato y se lo pasa al siguiente.</p>
+    <figure>
+      <svg viewBox="0 0 960 320" role="img" aria-label="Un archivo pasa por extract.py que saca el texto, chunk.py que lo parte en fragmentos de 300 palabras con solape de 60, embed.py que pide los vectores a Google AI en lotes, y store.py que los guarda en ChromaDB.">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" stroke="none"/></marker>
+        </defs>
+        <!-- Google AI arriba de embed -->
+        <rect x="575" y="28" width="150" height="52" rx="6" class="dash"/>
+        <text x="650" y="49" text-anchor="middle" class="u">Google AI</text>
+        <text x="650" y="68" text-anchor="middle" class="m">gemini-embedding-001</text>
+        <line x1="638" y1="140" x2="638" y2="80" marker-end="url(#ar2)"/>
+        <text x="630" y="115" text-anchor="end" class="lbl">textos</text>
+        <line x1="662" y1="80" x2="662" y2="140" marker-end="url(#ar2)"/>
+        <text x="670" y="115" class="lbl">vectores</text>
+        <!-- Cajas -->
+        <rect x="20" y="140" width="150" height="72" rx="4"/>
+        <text x="95" y="168" text-anchor="middle" class="b">Archivo</text>
+        <text x="95" y="190" text-anchor="middle" class="s">PDF · Markdown · texto</text>
+
+        <rect x="205" y="140" width="150" height="72" rx="4" class="acc"/>
+        <text x="280" y="163" text-anchor="middle" class="m">extract.py</text>
+        <text x="280" y="183" text-anchor="middle">archivo → texto</text>
+        <text x="280" y="201" text-anchor="middle" class="s">pypdf o UTF-8</text>
+
+        <rect x="390" y="140" width="150" height="72" rx="4" class="acc"/>
+        <text x="465" y="163" text-anchor="middle" class="m">chunk.py</text>
+        <text x="465" y="183" text-anchor="middle">300 palabras</text>
+        <text x="465" y="201" text-anchor="middle" class="s">solape de 60</text>
+
+        <rect x="575" y="140" width="150" height="72" rx="4" class="acc"/>
+        <text x="650" y="163" text-anchor="middle" class="m">embed.py</text>
+        <text x="650" y="183" text-anchor="middle">lotes de 32</text>
+        <text x="650" y="201" text-anchor="middle" class="s">task RETRIEVAL_DOCUMENT</text>
+
+        <rect x="760" y="140" width="150" height="72" rx="4" class="acc"/>
+        <text x="835" y="163" text-anchor="middle" class="m">store.py</text>
+        <text x="835" y="183" text-anchor="middle">upsert</text>
+        <text x="835" y="201" text-anchor="middle" class="s">id = archivo#i</text>
+        <!-- Flechas entre cajas -->
+        <line x1="170" y1="176" x2="205" y2="176" marker-end="url(#ar2)"/>
+        <text x="187" y="166" text-anchor="middle" class="lbl">bytes</text>
+        <line x1="355" y1="176" x2="390" y2="176" marker-end="url(#ar2)"/>
+        <text x="372" y="166" text-anchor="middle" class="lbl">texto</text>
+        <line x1="540" y1="176" x2="575" y2="176" marker-end="url(#ar2)"/>
+        <text x="557" y="166" text-anchor="middle" class="lbl">chunks</text>
+        <line x1="725" y1="176" x2="760" y2="176" marker-end="url(#ar2)"/>
+        <text x="742" y="166" text-anchor="middle" class="lbl">3072</text>
+        <!-- Chroma abajo de store -->
+        <line x1="835" y1="212" x2="835" y2="250" marker-end="url(#ar2)"/>
+        <text x="843" y="236" class="lbl">guarda</text>
+        <rect x="760" y="250" width="150" height="54" rx="4"/>
+        <text x="835" y="272" text-anchor="middle" class="b">ChromaDB</text>
+        <text x="835" y="291" text-anchor="middle" class="s">vector + texto + fuente</text>
+        <!-- Respuesta -->
+        <text x="20" y="262" class="s">Respuesta de la API:</text>
+        <text x="20" y="282" class="m">{documents, chunks, sources, skipped}</text>
+        <text x="20" y="302" class="s">Un PDF escaneado no tiene texto: aparece en skipped, no se indexa.</text>
+      </svg>
+      <figcaption><strong>Lo que cambia en cada paso:</strong> bytes → texto plano → fragmentos con posición → un vector de 3072 números por fragmento → una fila en Chroma con vector, texto y metadatos. El id <code>archivo#i</code> es estable: volver a subir el mismo archivo reemplaza sus filas en vez de duplicarlas.</figcaption>
+    </figure>
+  </section>
+
+  <section id="consulta">
+    <h2>3. Qué pasa cuando haces una pregunta</h2>
+    <p>Es la ruta <code>POST /query</code>. Primero recupera, después genera, y hay dos puntos donde el sistema puede decidir abstenerse en lugar de inventar.</p>
+    <figure>
+      <svg viewBox="0 0 960 460" role="img" aria-label="La pregunta se convierte en vector, Chroma devuelve los fragmentos más parecidos con su score; si el mejor score no llega a 0.6 el sistema se abstiene sin llamar a Gemini; si llega, generate.py arma el prompt con los fragmentos numerados y Gemini responde con citas, o escribe la marca de no evidencia y el sistema se abstiene.">
+        <defs>
+          <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" stroke="none"/></marker>
+          <marker id="ar3w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9A5B00" stroke="none"/></marker>
+        </defs>
+        <!-- Fila 1 -->
+        <rect x="20" y="60" width="140" height="64" rx="4"/>
+        <text x="90" y="86" text-anchor="middle" class="b">Pregunta</text>
+        <text x="90" y="108" text-anchor="middle" class="m">{question, top_k}</text>
+
+        <rect x="195" y="60" width="140" height="64" rx="4" class="acc"/>
+        <text x="265" y="82" text-anchor="middle" class="m">embed.py</text>
+        <text x="265" y="100" text-anchor="middle" class="s">task RETRIEVAL_QUERY</text>
+        <text x="265" y="116" text-anchor="middle" class="s">mismo modelo que al indexar</text>
+
+        <rect x="370" y="60" width="140" height="64" rx="4" class="acc"/>
+        <text x="440" y="82" text-anchor="middle" class="m">store.py</text>
+        <text x="440" y="100" text-anchor="middle">query top-k</text>
+        <text x="440" y="116" text-anchor="middle" class="s">score = 1 − distancia</text>
+
+        <polygon points="615,52 695,92 615,132 535,92" class="acc"/>
+        <text x="615" y="88" text-anchor="middle" class="s">¿mejor score</text>
+        <text x="615" y="103" text-anchor="middle" class="b">≥ 0.6?</text>
+
+        <rect x="720" y="60" width="140" height="64" rx="4" class="acc"/>
+        <text x="790" y="82" text-anchor="middle" class="m">generate.py</text>
+        <text x="790" y="100" text-anchor="middle">prompt [1]…[k]</text>
+        <text x="790" y="116" text-anchor="middle" class="s">+ reglas del sistema</text>
+
+        <line x1="160" y1="92" x2="195" y2="92" marker-end="url(#ar3)"/>
+        <line x1="335" y1="92" x2="370" y2="92" marker-end="url(#ar3)"/>
+        <text x="352" y="82" text-anchor="middle" class="lbl">vector</text>
+        <line x1="510" y1="92" x2="535" y2="92" marker-end="url(#ar3)"/>
+        <text x="522" y="82" text-anchor="middle" class="lbl">hits</text>
+        <line x1="695" y1="92" x2="720" y2="92" marker-end="url(#ar3)"/>
+        <text x="707" y="82" text-anchor="middle" class="lbl">sí</text>
+
+        <!-- Abstención por umbral -->
+        <line x1="615" y1="132" x2="615" y2="180" class="warn" marker-end="url(#ar3w)"/>
+        <text x="623" y="160" class="lbl warnt">no</text>
+        <rect x="535" y="180" width="160" height="64" rx="4" class="warn"/>
+        <text x="615" y="203" text-anchor="middle" class="b warnt">Abstención</text>
+        <text x="615" y="221" text-anchor="middle" class="s">sin llamar a Gemini</text>
+        <text x="615" y="236" text-anchor="middle" class="m">abstained: true</text>
+
+        <!-- Gemini -->
+        <line x1="790" y1="124" x2="790" y2="180" marker-end="url(#ar3)"/>
+        <text x="798" y="155" class="lbl">generate_content</text>
+        <rect x="720" y="180" width="140" height="52" rx="6" class="dash"/>
+        <text x="790" y="201" text-anchor="middle" class="u">Gemini</text>
+        <text x="790" y="219" text-anchor="middle" class="m">gemini-3.6-flash</text>
+        <line x1="790" y1="232" x2="790" y2="256" marker-end="url(#ar3)"/>
+
+        <!-- Decisión del modelo -->
+        <polygon points="790,256 880,300 790,344 700,300" class="acc"/>
+        <text x="790" y="292" text-anchor="middle" class="s">¿escribió la marca</text>
+        <text x="790" y="308" text-anchor="middle" class="b">NO HAY EVIDENCIA?</text>
+
+        <!-- Abstención por modelo -->
+        <line x1="790" y1="344" x2="790" y2="380" class="warn" marker-end="url(#ar3w)"/>
+        <text x="798" y="366" class="lbl warnt">sí</text>
+        <rect x="720" y="380" width="140" height="64" rx="4" class="warn"/>
+        <text x="790" y="403" text-anchor="middle" class="b warnt">Abstención</text>
+        <text x="790" y="421" text-anchor="middle" class="s">el tema era cercano,</text>
+        <text x="790" y="436" text-anchor="middle" class="s">la respuesta no estaba</text>
+
+        <!-- Respuesta -->
+        <line x1="700" y1="300" x2="650" y2="300" marker-end="url(#ar3)"/>
+        <text x="675" y="290" text-anchor="middle" class="lbl">no</text>
+        <rect x="470" y="268" width="180" height="64" rx="4" class="acc"/>
+        <text x="560" y="291" text-anchor="middle" class="b">Respuesta con citas [n]</text>
+        <text x="560" y="309" text-anchor="middle" class="s">en español, solo con el contexto</text>
+        <text x="560" y="324" text-anchor="middle" class="m">abstained: false</text>
+
+        <!-- JSON final -->
+        <line x1="470" y1="300" x2="420" y2="300" marker-end="url(#ar3)"/>
+        <rect x="240" y="268" width="180" height="64" rx="4"/>
+        <text x="330" y="291" text-anchor="middle" class="b">JSON al frontend</text>
+        <text x="330" y="311" text-anchor="middle" class="m">{answer, citations,</text>
+        <text x="330" y="326" text-anchor="middle" class="m">abstained}</text>
+        <text x="20" y="380" class="s">Las tres salidas devuelven el mismo JSON. En las abstenciones, citations trae los</text>
+        <text x="20" y="398" class="s">fragmentos más cercanos con su score, para poder calibrar el umbral.</text>
+        <text x="20" y="430" class="s">Medido con gemini-embedding-001: preguntas del dominio 0.70 a 0.74; pregunta ajena 0.52 a 0.54;</text>
+        <text x="20" y="448" class="s">tema cercano sin respuesta 0.64 a 0.66 (aquí decide Gemini, no el umbral).</text>
+      </svg>
+      <figcaption><strong>Dos capas de abstención:</strong> el umbral de similitud detiene las preguntas que no se parecen a nada del corpus antes de gastar una llamada a Gemini; la instrucción del prompt detiene las que se parecen pero no tienen respuesta en los fragmentos. La tercera prueba de la tabla es la que justifica tener las dos.</figcaption>
+    </figure>
+  </section>
+</main>
